@@ -1,6 +1,7 @@
-// services/mlService.js - ML service integration
 const axios = require('axios');
 const fs = require('fs');
+const FormData = require('form-data'); // ✅ use node form-data
+const path = require('path');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
 
@@ -12,13 +13,14 @@ class MLService {
   async analyzeImage(file) {
     try {
       const formData = new FormData();
-      const imageBuffer = fs.readFileSync(file.path);
-      const blob = new Blob([imageBuffer], { type: file.mimetype });
-      formData.append('image', blob, file.filename);
+      formData.append('image', fs.createReadStream(file.path), {
+        filename: file.filename,
+        contentType: file.mimetype
+      });
 
       const response = await axios.post(`${ML_SERVICE_URL}/analyze`, formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          ...formData.getHeaders() // ✅ get proper headers
         },
         timeout: this.timeout
       });
@@ -26,15 +28,15 @@ class MLService {
       return response.data;
     } catch (error) {
       console.error('ML Service Error:', error.message);
-      
+
       if (error.code === 'ECONNREFUSED') {
         throw new Error('ML service is not available');
       }
-      
+
       if (error.code === 'ECONNABORTED') {
         throw new Error('ML service timeout');
       }
-      
+
       throw new Error(`ML service error: ${error.message}`);
     }
   }

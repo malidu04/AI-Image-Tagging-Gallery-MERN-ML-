@@ -22,7 +22,7 @@ const gracefulShutdown = (signal) => {
     console.error('❌ Forced shutdown due to timeout');
     process.exit(1);
   }, 10000);
-}; 
+};
 
 // Request logging middleware
 const requestLogger = (req, res, next) => {

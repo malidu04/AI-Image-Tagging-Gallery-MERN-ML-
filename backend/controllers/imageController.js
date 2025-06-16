@@ -1,110 +1,82 @@
-const Image = require('../models/image');
+// controllers/imageController.js - Image business logic
+const Image = require('../models/Image');
 const mlService = require('../services/mlService');
 const { deleteFile } = require('../utils/fileUtils');
+const path = require('path');
 
+
+// Upload and analyze image
 const uploadImage = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // ML analysis
+    let tags = ['unanalyzed'];
+    let confidence = {};
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No File Uploaded' });
-        }
-
-        console.log('File uploaded:', req.file.filename);
-
-        try {
-
-            const mlResult = await mlService.analyzeImage(req.file);
-            const { tags, confidence } = mlResult;
-
-            const newImage = new Image({
-                filename: req.file.filename,
-                originalName: req.file.originalname,
-                path: req.file.path,
-                tags: tags,
-                confidence: confidence,
-                fileSize: req.file.size,
-                mimeType: req.file.mimetype
-            });
-
-            await newImage.save();
-
-            res.json({
-                success: true,
-                image: newImage,
-                message: 'Image Uploaded and Analyzed Successfully'
-            });
-        } catch (mlError) {
-            console.error('ML Service Error:', mlError.message);
-
-            const newImage = new Image({
-                filename: req.file.filename,
-                originalName: req.file.originalname,
-                path: req.file.path,
-                tags: ['unanalyzed'],
-                confidence: {},
-                fileSize: req.file.size,
-                mimeType: req.file.mimetype
-            });
-
-            await newImage.save();
-
-            res.json({
-                success: true,
-                image: newImage,
-                message: 'Image uploaded but ML analysis failed',
-                warning: 'ML service unavailable'
-            });
-        }
-    } catch (error) {
-        console.error('Upload error', error);
-
-        if(req.file && req.file.path) {
-            deleteFile(req.file.path);
-        }
-        res.status(500).json({ error: 'upload failed', details: error.message });
+      const mlResult = await mlService.analyzeImage(req.file);
+      tags = mlResult.tags || tags;
+      confidence = mlResult.confidence || confidence;
+    } catch (mlError) {
+      console.error('ML analysis failed:', mlError.message);
     }
+
+    const newImage = new Image({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      path: path.join('uploads', req.file.filename), // relative to project root
+      tags,
+      confidence,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+    });
+
+    await newImage.save();
+
+    res.json({ success: true, image: newImage, message: 'Image uploaded and analyzed' });
+  } catch (error) {
+    console.error('Upload error:', error);
+    if (req.file && req.file.path) deleteFile(req.file.path);
+    res.status(500).json({ error: 'Upload failed', details: error.message });
+  }
 };
 
+// Get all images with filtering
 const getImages = async (req, res) => {
-    try {
-        const { tag, search, page = 1, limit = 20 } = req.query;
-        let query = {};
-
-        if(tag && tag != 'all') {
-            query.tags = { $in: [tag] };
-        }
-
-        if(search) {
-            query.$or = [
-                { tags: { $regex: search, $options: 'i' } },
-                { originalName: { $regex: search, $options: 'i' } }
-            ];
-        }
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const [images, totla] = await Promise.all([
-            Image.find(query)
-                .sort({ uploadDate: -1 })
-                .skip(skip)
-                .limit(parseInt(limit)),
-            Image.countDocuments(query)
-        ]);
-
-        res.json({
-            images,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                pages: Math.ceil(total / parseInt(limit))
-            }
-        });
-    } catch (error) {
-        console.error('Get Images Error:', error);
-        res.status(500).json({ error: 'Failed to fetch images' });
+  try {
+    const { tag, search, page = 1, limit = 20 } = req.query;
+    let query = {};
+    if (tag && tag !== 'all') query.tags = { $in: [tag] };
+    if (search) {
+      query.$or = [
+        { tags: { $regex: search, $options: 'i' } },
+        { originalName: { $regex: search, $options: 'i' } }
+      ];
     }
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [images, total] = await Promise.all([
+      Image.find(query).sort({ uploadDate: -1 }).skip(skip).limit(parseInt(limit)),
+      Image.countDocuments(query),
+    ]);
+
+    res.json({
+      images,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    console.error('Get images error:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
 };
 
+
+// Get unique tags
 const getTags = async (req, res) => {
   try {
     const tags = await Image.distinct('tags');
@@ -116,6 +88,7 @@ const getTags = async (req, res) => {
   }
 };
 
+// Get single image by ID
 const getImageById = async (req, res) => {
   try {
     const image = await Image.findById(req.params.id);
@@ -137,7 +110,7 @@ const deleteImage = async (req, res) => {
       return res.status(404).json({ error: 'Image not found' });
     }
 
-    // Delete file from filesystem
+    // Delete file from filesystem 
     deleteFile(image.path);
 
     // Delete from database

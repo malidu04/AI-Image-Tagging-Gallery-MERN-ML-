@@ -1,20 +1,24 @@
-// middleware/uploadMiddleware.js - File upload configuration
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
-// Multer configuration for file uploads
+// Ensure uploads folder exists
+const uploadDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  // Check if file is an image
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -22,33 +26,32 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { 
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1 // Only allow single file upload
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1
   }
 });
 
-// Middleware for single file upload
 const uploadMiddleware = upload.single('image');
 
-// Error handling wrapper
 const uploadWithErrorHandling = (req, res, next) => {
   uploadMiddleware(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: 'File too large. Max size 5MB.' });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          return res.status(400).json({ error: 'Only one file allowed.' });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({ error: 'Unexpected field name; use "image".' });
+        }
+        return res.status(400).json({ error: `Upload error: ${err.message}` });
       }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ error: 'Too many files. Only one file allowed.' });
-      }
-      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-        return res.status(400).json({ error: 'Unexpected field name. Use "image" as field name.' });
-      }
-      return res.status(400).json({ error: `Upload error: ${err.message}` });
-    } else if (err) {
       return res.status(400).json({ error: err.message });
     }
     next();
@@ -57,5 +60,5 @@ const uploadWithErrorHandling = (req, res, next) => {
 
 module.exports = {
   uploadMiddleware: uploadWithErrorHandling,
-  upload
+  upload,
 };
