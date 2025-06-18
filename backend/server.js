@@ -20,7 +20,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Test routes one by one
+// Test routes one by one 
 console.log('Testing routes one by one...');
 
 // Let's manually define each route to see which one fails
